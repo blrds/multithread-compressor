@@ -1,0 +1,34 @@
+﻿<Window x:Class="Master.Views.Windows.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Master.Views.Windows"
+        mc:Ignorable="d"
+        xmlns:vm="clr-namespace:Master.ViewModels"
+        Title="Мастер" Height="450" Width="800">
+    <Window.DataContext>
+        <vm:MainWindowViewModel/>
+    </Window.DataContext>
+    <Window.Resources>
+        <Style x:Key="MenuItem" TargetType="MenuItem">
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+    </Window.Resources>
+    <DockPanel LastChildFill="False">
+        <Menu DockPanel.Dock="Top" >
+            <MenuItem Header="Файл" Style="{StaticResource MenuItem}"/>
+            <MenuItem Header="Сервер" Style="{StaticResource MenuItem}">
+                <MenuItem Header="Настройка"/>
+                <MenuItem Header="Старт" Command="{Binding ServerStart}"/>
+            </MenuItem>
+            <MenuItem Header="Пуск" Style="{StaticResource MenuItem}" Command="{Binding Click}"/>
+            <MenuItem Header="Справка" Style="{StaticResource MenuItem}"/>
+            <MenuItem Header="О программе" Style="{StaticResource MenuItem}"/>
+        </Menu>
+        <TextBox Text="{Binding Port}"/>
+        <ProgressBar Minimum="0" Maximum="100" DockPanel.Dock="Bottom" Height="15"/>
+    </DockPanel>
+</Window>
