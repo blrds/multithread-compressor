@@ -2,11 +2,12 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Master.Infrastructure
+namespace Master.Models
 {
     internal class Slave
     {
@@ -19,6 +20,9 @@ namespace Master.Infrastructure
         public int Id { get; private set; }
 
         public TcpClient Client { get; private set; }
+
+        public int Port { get => ((IPEndPoint)Client.Client.RemoteEndPoint).Port; }
+        public IPAddress IP { get => ((IPEndPoint)Client.Client.RemoteEndPoint).Address; }
 
     }
 }

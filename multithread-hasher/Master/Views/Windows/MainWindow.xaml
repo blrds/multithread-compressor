@@ -17,18 +17,63 @@
             <Setter Property="Background" Value="Transparent"/>
         </Style>
     </Window.Resources>
-    <DockPanel LastChildFill="False">
+    <DockPanel LastChildFill="True">
         <Menu DockPanel.Dock="Top" >
-            <MenuItem Header="Файл" Style="{StaticResource MenuItem}"/>
-            <MenuItem Header="Сервер" Style="{StaticResource MenuItem}">
-                <MenuItem Header="Настройка"/>
-                <MenuItem Header="Старт" Command="{Binding ServerStart}"/>
-            </MenuItem>
-            <MenuItem Header="Пуск" Style="{StaticResource MenuItem}" Command="{Binding Click}"/>
+            <MenuItem Header="Файл" Style="{StaticResource MenuItem}" Command="{Binding FileChoose}"/>
+            <MenuItem Header="Сервер" Style="{StaticResource MenuItem}" Command="{Binding ServerStart}"/>
+            <MenuItem Header="Старт" Style="{StaticResource MenuItem}" Command="{Binding Start}"/>
             <MenuItem Header="Справка" Style="{StaticResource MenuItem}"/>
             <MenuItem Header="О программе" Style="{StaticResource MenuItem}"/>
         </Menu>
-        <TextBox Text="{Binding Port}"/>
-        <ProgressBar Minimum="0" Maximum="100" DockPanel.Dock="Bottom" Height="15"/>
+        
+        <StackPanel DockPanel.Dock="Left" Orientation="Vertical" Margin="10,5">
+            <TextBlock Text="Адрес:"/>
+            <TextBlock Text="{Binding IP}"/>
+            <TextBlock Text="Порт:"/>
+            <TextBox Text="{Binding Port}"/>
+            <ListView ItemsSource="{Binding Slaves}">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Vertical">
+                            <TextBlock Text="{Binding Id}"/>
+                            <TextBlock Text="{Binding IP}"/>
+                            <TextBlock Text="{Binding Port}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>                
+            </ListView>
+        </StackPanel><!--Сервер-->
+        <StackPanel DockPanel.Dock="Top" Orientation="Vertical" Margin="10,5">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Имя:"/>
+                <TextBlock Text="{Binding FileName}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Размер в мб:"/>
+                <TextBlock Text="{Binding FileSize}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Vertical">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Работники:" Width="65"/>
+                        <TextBlock Text="{Binding SlaveHash}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Мастер:" Width="65"/>
+                        <TextBlock Text="{Binding MasterHash}"/>
+                    </StackPanel>
+                </StackPanel>
+                <Label x:Name="isEqualHash" Width="25" Height="25" Background="{Binding IsHashEqualColored}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Время работников:" Width="110"/>
+                <TextBlock Text="{Binding SlavesTime}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Время мастера:" Width="110"/>
+                <TextBlock Text="{Binding MasterTime}"/>
+            </StackPanel>
+            <TextBlock x:Name="log" Text="{Binding Log}"/>
+        </StackPanel><!--Вывод-->
     </DockPanel>
 </Window>

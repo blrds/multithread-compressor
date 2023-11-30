@@ -7,39 +7,146 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Threading;
-using Master.Infrastructure;
+using Master.Models;
 using System.Net.Sockets;
 using System.Net;
+using System.Windows.Threading;
+using System.Windows;
+using System.Net.Http;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Collections.ObjectModel;
+using Microsoft.Win32;
+using System.IO;
+using ByteSizeLib;
+using System.Diagnostics;
 
 namespace Master.ViewModels
 {
-    internal class MainWindowViewModel:ViewModel
+    internal class MainWindowViewModel : ViewModel
     {
+        #region Private Variables
         Thread Server;
-        List<Slave> slaves = new List<Slave>();
+        TcpListener tcpListener;
+        #endregion
 
         #region Variables
 
-
+        #region server
         private int port = 12345;
-        public int Port { get { return port; } set { Set<int>(ref port, value); } }
+        public int Port { get => port; set => Set<int>(ref port, value); }
 
+        public static string IP { get { return string.Join(Environment.NewLine, Dns.GetHostAddresses(Dns.GetHostName()).Where(x => x.AddressFamily == AddressFamily.InterNetwork).Select(x => x.ToString()).ToArray()); } }
 
-        TcpListener tcpListener;
+        #endregion
+
+        public Stopwatch sws = Stopwatch.StartNew();
+        public Stopwatch swm = Stopwatch.StartNew();
+
+        private string log = "";
+        public string Log { get => log; set => Set<string>(ref log, value); }
+
+        public ObservableCollection<Slave> Slaves { get; private set; } = new ObservableCollection<Slave>();
+
+        #region experiment
+
+        private string slavesHash = "";
+        public string SlaveHash { get => slavesHash; private set => Set<string>(ref slavesHash, value); }
+
+        private string masterHash = "";
+        public string MasterHash { get => masterHash; private set => Set<string>(ref masterHash, value); }
+
+        public bool IsHashEqual { get => MasterHash.Equals(SlaveHash); }
+        public SolidColorBrush IsHashEqualColored { get => IsHashEqual ? Brushes.Green : Brushes.Maroon; }
+
+        public TimeSpan SlavesTime { get => sws.Elapsed; }
+
+        public TimeSpan MasterTime { get => swm.Elapsed; }
+        #endregion
+
+        #region file
+        private string fileName = "";
+        public string FileName { get => fileName; private set => Set<string>(ref fileName, value); }
+
+        private double fileSize = 0;
+        public double FileSize { get => fileSize; private set => Set<double>(ref fileSize, value); }
+        #endregion
+
         #endregion
 
         public MainWindowViewModel()
         {
-            Click = new LambdaCommand(OnClickExecuted, CanClickExecute);
+            Start = new LambdaCommand(OnStartExecuted, CanStartExecute);
             ServerStart = new LambdaCommand(OnServerStartExecuted, CanServerStartExecute);
+            FileChoose = new LambdaCommand(OnFileChooseExecuted, CanFileChooseExecute);
+            Log += "Hello user\n";
         }
 
-        #region Click
-        public ICommand Click { get; }
-        private bool CanClickExecute(object p) => true;
-        private void OnClickExecuted(object p)
+        #region Start
+        public ICommand Start { get; }
+        private bool CanStartExecute(object p) => File.Exists(FileName);
+        private void OnStartExecuted(object p)
         {
-            //Server.Abort();
+            Log += "Experiment started at " + DateTime.Now.ToString("h:mm:ss tt") + "\n";
+            #region tasks giveaway
+            byte[] bytes = File.ReadAllBytes(FileName);
+            int size = Convert.ToInt32(Math.Floor(Convert.ToDecimal((double)bytes.Length / Slaves.Count)));
+            for (int i = 0; i < Slaves.Count; i++)
+            {
+                Log += ($"Client {i} recieving the task");
+                var str = Encoding.UTF8.GetBytes("/task");
+                Slaves[i].Client.GetStream().Write(str);
+                var task = bytes.Skip(i * size).Take(size).ToArray();
+                Slaves[i].Client.GetStream().Write(task);
+                str = Encoding.UTF8.GetBytes("/endtask");
+                Slaves[i].Client.GetStream().Write(str);
+            }
+            #endregion
+            #region waiting
+            for (int i = 0; i < Slaves.Count; i++)
+            {
+                var buf = new char[4096];
+                StreamReader sr = new StreamReader(Slaves[i].Client.GetStream());
+                sr.ReadBlock(buf, 0, buf.Length);
+                if (new string(buf) == "/approve")
+                {
+                    Log += ($"Client {i} recieved task successfuly");
+                }
+                else
+                {
+                    i--;
+                }
+            }
+            #endregion
+            #region start
+            foreach (var s in Slaves)
+            {
+                s.Client.GetStream().Write(Encoding.UTF8.GetBytes("/start"));
+            }
+            Thread thread = new Thread(() => { 
+
+                Application.Current.Dispatcher.Invoke(() => { swm.Stop();});
+            });
+            for (int i=0;i<Slaves.Count;i++)
+            {
+                var buf = new char[4096];
+                StreamReader sr = new StreamReader(Slaves[i].Client.GetStream());
+                sr.ReadBlock(buf, 0, buf.Length);
+                string str = new string(buf);
+                var splits = str.Split(" ");
+                if (splits[0] == "/end")
+                {
+                    Log += ($"Client {i} done task successfuly");
+                    SlaveHash += splits[1];
+                }
+                else
+                {
+                    i--;
+                }
+            }
+            sws.Stop();
+            thread.Join();
+            #endregion
         }
         #endregion
 
@@ -49,31 +156,65 @@ namespace Master.ViewModels
         private void OnServerStartExecuted(object p)
         {
 
-            tcpListener = new TcpListener(IPAddress.Parse("127.0.0.1"), Port);
+            tcpListener = new TcpListener(Port);
             tcpListener.Start();
             Server = new Thread(SlaveListener);
+            Server.IsBackground = true;
             Server.Start();
+        }
+        #endregion
+
+        #region FileChoose
+        public ICommand FileChoose { get; }
+        private bool CanFileChooseExecute(object p) => true;
+        private void OnFileChooseExecuted(object p)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            openFileDialog.Filter = "All files (*.*)|*.*";
+            if (openFileDialog.ShowDialog() == true)
+            {
+                FileName = openFileDialog.FileName;
+                FileSize = Convert.ToDouble(new FileInfo(FileName).Length) / ByteSize.BytesInMegaByte;
+            }
+
         }
         #endregion
 
         #region Externals
         void SlaveListener()
         {
+            int slaveCount = 0;
+            Application.Current.Dispatcher.BeginInvoke(() => Log += ("Sever started\n"));
             while (true)
             {
-                TcpClient c = new TcpClient();
-                c = tcpListener.AcceptTcpClient();
-                var buf=new byte[4096];
+                Application.Current.Dispatcher.BeginInvoke(() => Log += ("Waiting for new connection\n"));
+                var c = tcpListener.AcceptTcpClient();
+                Application.Current.Dispatcher.BeginInvoke(() => Log += ($"New connection from {((IPEndPoint)c.Client.RemoteEndPoint).Address}:{((IPEndPoint)c.Client.RemoteEndPoint).Port}\n"));
+                var buf = new byte[4096];
                 c.GetStream().Read(buf);
-                string str=Encoding.UTF8.GetString(buf);
+                string str = Encoding.UTF8.GetString(buf);
                 var lexems = str.Split(" ");
                 switch (lexems[0])
                 {
                     case "/reg":
                         {
-                            slaves.Add(new Slave(slaves.Count, c));
-                            var s = Encoding.UTF8.GetBytes($"\\approve {slaves.Count}");
+                            Application.Current.Dispatcher.BeginInvoke(() =>
+                            {
+                                Slaves.Add(new Slave(slaveCount, c));
+                                OnPropertyChanged("Slaves");
+                            });
+                            slaveCount++;
+                            var s = Encoding.UTF8.GetBytes($"/approve {slaveCount}");
                             c.GetStream().Write(s, 0, s.Length);
+                            Application.Current.Dispatcher.BeginInvoke(() => Log += ($"New client at {((IPEndPoint)c.Client.RemoteEndPoint).Address}:{((IPEndPoint)c.Client.RemoteEndPoint).Port}\n"));
+
+                            break;
+                        }
+                    default:
+                        {
+                            var s = Encoding.UTF8.GetBytes("wtf are you, shut up");
+                            c.GetStream().Write(s, 0, s.Length);
+                            Application.Current.Dispatcher.BeginInvoke(() => Log += ($"New something strange from {((IPEndPoint)c.Client.RemoteEndPoint).Address}:{((IPEndPoint)c.Client.RemoteEndPoint).Port}\n"));
                             break;
                         }
                 }
