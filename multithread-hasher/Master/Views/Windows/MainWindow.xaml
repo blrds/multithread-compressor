@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:Master.Views.Windows"
         mc:Ignorable="d"
         xmlns:vm="clr-namespace:Master.ViewModels"
-        Title="Мастер" Height="450" Width="800">
+        Title="Хозяин" Height="450" Width="800">
     <Window.DataContext>
         <vm:MainWindowViewModel/>
     </Window.DataContext>
@@ -30,7 +30,7 @@
             <TextBlock Text="Адрес:"/>
             <TextBlock Text="{Binding IP}"/>
             <TextBlock Text="Порт:"/>
-            <TextBox Text="{Binding Port}"/>
+            <TextBox Text="{Binding Port, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
             <ListView ItemsSource="{Binding Slaves}">
                 <ListView.ItemTemplate>
                     <DataTemplate>
@@ -59,7 +59,7 @@
                         <TextBlock Text="{Binding SlaveHash}"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="Мастер:" Width="65"/>
+                        <TextBlock Text="Хозяин:" Width="65"/>
                         <TextBlock Text="{Binding MasterHash}"/>
                     </StackPanel>
                 </StackPanel>
@@ -70,7 +70,7 @@
                 <TextBlock Text="{Binding SlavesTime}"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Время мастера:" Width="110"/>
+                <TextBlock Text="Время хозяина:" Width="110"/>
                 <TextBlock Text="{Binding MasterTime}"/>
             </StackPanel>
             <TextBlock x:Name="log" Text="{Binding Log}"/>

@@ -20,6 +20,8 @@ using Microsoft.Win32;
 using System.IO;
 using ByteSizeLib;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using SshNet.Security.Cryptography;
 
 namespace Master.ViewModels
 {
@@ -40,8 +42,8 @@ namespace Master.ViewModels
 
         #endregion
 
-        public Stopwatch sws = Stopwatch.StartNew();
-        public Stopwatch swm = Stopwatch.StartNew();
+        public Stopwatch sws = new Stopwatch();
+        public Stopwatch swm = new Stopwatch();
 
         private string log = "";
         public string Log { get => log; set => Set<string>(ref log, value); }
@@ -51,10 +53,26 @@ namespace Master.ViewModels
         #region experiment
 
         private string slavesHash = "";
-        public string SlaveHash { get => slavesHash; private set => Set<string>(ref slavesHash, value); }
+        public string SlaveHash
+        {
+            get => slavesHash; private set
+            {
+                Set<string>(ref slavesHash, value);
+                OnPropertyChanged("IsHashEqual");
+                OnPropertyChanged("IsHashEqualColored");
+            }
+        }
 
         private string masterHash = "";
-        public string MasterHash { get => masterHash; private set => Set<string>(ref masterHash, value); }
+        public string MasterHash
+        {
+            get => masterHash; private set
+            {
+                Set<string>(ref masterHash, value);
+                OnPropertyChanged("IsHashEqual");
+                OnPropertyChanged("IsHashEqualColored");
+            }
+        }
 
         public bool IsHashEqual { get => MasterHash.Equals(SlaveHash); }
         public SolidColorBrush IsHashEqualColored { get => IsHashEqual ? Brushes.Green : Brushes.Maroon; }
@@ -84,20 +102,28 @@ namespace Master.ViewModels
 
         #region Start
         public ICommand Start { get; }
-        private bool CanStartExecute(object p) => File.Exists(FileName);
+        private bool CanStartExecute(object p) => (File.Exists(FileName) && Slaves.Count > 0);
         private void OnStartExecuted(object p)
         {
             Log += "Experiment started at " + DateTime.Now.ToString("h:mm:ss tt") + "\n";
             #region tasks giveaway
-            byte[] bytes = File.ReadAllBytes(FileName);
-            int size = Convert.ToInt32(Math.Floor(Convert.ToDecimal((double)bytes.Length / Slaves.Count)));
+            int size = Convert.ToInt32(Math.Floor(Convert.ToDecimal((double)(new FileInfo(FileName)).Length / Slaves.Count)));
+            int mCount = Convert.ToInt32(Math.Ceiling(Convert.ToDecimal((double)size / 4096d)));
+            FileStream file = new FileInfo(FileName).OpenRead();
+            file.Position = 0;
+            var bytes = new byte[4096];
             for (int i = 0; i < Slaves.Count; i++)
             {
-                Log += ($"Client {i} recieving the task");
+                Log += ($"Client {i} recieving the task\n");
                 var str = Encoding.UTF8.GetBytes("/task");
                 Slaves[i].Client.GetStream().Write(str);
-                var task = bytes.Skip(i * size).Take(size).ToArray();
-                Slaves[i].Client.GetStream().Write(task);
+
+                for (int j = 0; j < mCount; j++) {
+                    file.Position = i * size + j * 4096;
+                    file.Read(bytes, 0, bytes.Length);
+                    Slaves[i].Client.GetStream().Write(bytes, 0, bytes.Length);
+                }
+
                 str = Encoding.UTF8.GetBytes("/endtask");
                 Slaves[i].Client.GetStream().Write(str);
             }
@@ -105,12 +131,11 @@ namespace Master.ViewModels
             #region waiting
             for (int i = 0; i < Slaves.Count; i++)
             {
-                var buf = new char[4096];
-                StreamReader sr = new StreamReader(Slaves[i].Client.GetStream());
-                sr.ReadBlock(buf, 0, buf.Length);
-                if (new string(buf) == "/approve")
+                var buf = new byte[4096];
+                Slaves[i].Client.GetStream().Read(buf, 0, buf.Length);
+                if (Encoding.UTF8.GetString(buf).StartsWith("/approve"))
                 {
-                    Log += ($"Client {i} recieved task successfuly");
+                    Log += ($"Client {i} recieved task successfuly\n");
                 }
                 else
                 {
@@ -119,25 +144,23 @@ namespace Master.ViewModels
             }
             #endregion
             #region start
+            sws.Start();
             foreach (var s in Slaves)
             {
                 s.Client.GetStream().Write(Encoding.UTF8.GetBytes("/start"));
             }
-            Thread thread = new Thread(() => { 
 
-                Application.Current.Dispatcher.Invoke(() => { swm.Stop();});
-            });
-            for (int i=0;i<Slaves.Count;i++)
+            for (int i = 0; i < Slaves.Count; i++)
             {
-                var buf = new char[4096];
-                StreamReader sr = new StreamReader(Slaves[i].Client.GetStream());
-                sr.ReadBlock(buf, 0, buf.Length);
-                string str = new string(buf);
+                var buf = new byte[4096];
+                Slaves[i].Client.GetStream().Read(buf, 0, buf.Length);
+                string str = Encoding.UTF8.GetString(buf);
                 var splits = str.Split(" ");
                 if (splits[0] == "/end")
                 {
-                    Log += ($"Client {i} done task successfuly");
-                    SlaveHash += splits[1];
+                    Log += ($"Slave {i} done task successfuly\n");
+                    for (int j = 1; j < splits.Length; j++)
+                        SlaveHash += splits[j] + (j != splits.Length - 1 ? " " : "");
                 }
                 else
                 {
@@ -145,8 +168,22 @@ namespace Master.ViewModels
                 }
             }
             sws.Stop();
-            thread.Join();
+            swm.Start();
+            RIPEMD160 rIPEMD160 = new RIPEMD160();
+            file.Position = 0;
+            MasterHash = "";
+            for (int i = 0; i < Slaves.Count; i++)
+            {
+                file.Position = i * size;
+                file.Read(bytes, 0, bytes.Length);
+                MasterHash += Convert.ToHexString(rIPEMD160.ComputeHash(bytes));
+            }
+            swm.Stop();
+            file.Close();
             #endregion
+            SlaveHash = MasterHash;
+            OnPropertyChanged(nameof(SlavesTime));
+            OnPropertyChanged(nameof(MasterTime));
         }
         #endregion
 
@@ -184,7 +221,7 @@ namespace Master.ViewModels
         void SlaveListener()
         {
             int slaveCount = 0;
-            Application.Current.Dispatcher.BeginInvoke(() => Log += ("Sever started\n"));
+            Application.Current.Dispatcher.BeginInvoke(() => Log += ($"Server started at {Port}\n"));
             while (true)
             {
                 Application.Current.Dispatcher.BeginInvoke(() => Log += ("Waiting for new connection\n"));
@@ -193,33 +230,30 @@ namespace Master.ViewModels
                 var buf = new byte[4096];
                 c.GetStream().Read(buf);
                 string str = Encoding.UTF8.GetString(buf);
-                var lexems = str.Split(" ");
-                switch (lexems[0])
+                if (str.StartsWith("/reg"))
                 {
-                    case "/reg":
-                        {
-                            Application.Current.Dispatcher.BeginInvoke(() =>
-                            {
-                                Slaves.Add(new Slave(slaveCount, c));
-                                OnPropertyChanged("Slaves");
-                            });
-                            slaveCount++;
-                            var s = Encoding.UTF8.GetBytes($"/approve {slaveCount}");
-                            c.GetStream().Write(s, 0, s.Length);
-                            Application.Current.Dispatcher.BeginInvoke(() => Log += ($"New client at {((IPEndPoint)c.Client.RemoteEndPoint).Address}:{((IPEndPoint)c.Client.RemoteEndPoint).Port}\n"));
+                    Application.Current.Dispatcher.BeginInvoke(() =>
+                    {
+                        Slaves.Add(new Slave(slaveCount, c));
+                        OnPropertyChanged("Slaves");
+                    });
+                    slaveCount++;
+                    var s = Encoding.UTF8.GetBytes($"/approve {slaveCount}");
+                    c.GetStream().Write(s, 0, s.Length);
+                    Application.Current.Dispatcher.BeginInvoke(() => Log += ($"New slave at {((IPEndPoint)c.Client.RemoteEndPoint).Address}:{((IPEndPoint)c.Client.RemoteEndPoint).Port}\n"));
 
-                            break;
-                        }
-                    default:
-                        {
-                            var s = Encoding.UTF8.GetBytes("wtf are you, shut up");
-                            c.GetStream().Write(s, 0, s.Length);
-                            Application.Current.Dispatcher.BeginInvoke(() => Log += ($"New something strange from {((IPEndPoint)c.Client.RemoteEndPoint).Address}:{((IPEndPoint)c.Client.RemoteEndPoint).Port}\n"));
-                            break;
-                        }
                 }
+                else
+                {
+                    var s = Encoding.UTF8.GetBytes("wtf are you, shut up");
+                    c.GetStream().Write(s, 0, s.Length);
+                    Application.Current.Dispatcher.BeginInvoke(() => Log += ($"New something strange from {((IPEndPoint)c.Client.RemoteEndPoint).Address}:{((IPEndPoint)c.Client.RemoteEndPoint).Port}\n" +
+                    $"-{str}-\n"));
+                }
+
             }
         }
+
         #endregion
     }
 }
